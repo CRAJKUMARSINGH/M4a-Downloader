@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,8 +11,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Download, Music, Video, AlertCircle, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Download, Music, Video, AlertCircle, Loader2, List } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const formSchema = z.object({
   url: z.string().min(1, 'URL is required'),
@@ -21,44 +24,72 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+interface PlaylistEntry {
+  url: string;
+  title: string;
+  duration: number;
+  thumbnail: string;
+}
+
+function isPlaylistUrl(url: string): boolean {
+  return /[?&]list=/.test(url) && /youtu/i.test(url);
+}
+
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function formatBytes(bytes: number | null | undefined) {
   if (!bytes) return null;
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4' }) {
-  const { data: videoInfo, isLoading, isError, error } = useGetVideoInfo(
+function VideoItem({
+  url,
+  format,
+  prefetchedInfo,
+  autoDownload,
+}: {
+  url: string;
+  format: 'mp3' | 'm4a' | 'mp4';
+  prefetchedInfo?: PlaylistEntry;
+  autoDownload?: boolean;
+}) {
+  const skip = !!prefetchedInfo;
+  const { data: fetchedInfo, isLoading, isError, error } = useGetVideoInfo(
     { url },
-    { query: { enabled: !!url, queryKey: getGetVideoInfoQueryKey({ url }), retry: false } }
+    { query: { enabled: !skip && !!url, queryKey: getGetVideoInfoQueryKey({ url }), retry: false } }
   );
+
+  const videoInfo = prefetchedInfo
+    ? { title: prefetchedInfo.title, duration: prefetchedInfo.duration, thumbnail: prefetchedInfo.thumbnail, filesize: null, bitrate: null }
+    : fetchedInfo;
 
   const [jobId, setJobId] = useState<string | null>(null);
   const createDownload = useCreateDownload();
   const progress = useJobProgress(jobId);
+  const autoTriggered = useRef(false);
 
   const handleDownload = () => {
+    if (createDownload.isPending || jobId) return;
     createDownload.mutate(
       { data: { url, format } },
-      {
-        onSuccess: (data) => {
-          setJobId(data.jobId);
-        },
-      }
+      { onSuccess: (data) => setJobId(data.jobId) }
     );
   };
 
-  if (isLoading) {
+  useEffect(() => {
+    if (autoDownload && videoInfo && !jobId && !autoTriggered.current) {
+      autoTriggered.current = true;
+      setTimeout(handleDownload, Math.random() * 400);
+    }
+  }, [autoDownload, videoInfo]);
+
+  if (!skip && isLoading) {
     return (
       <Card className="border-border/50 bg-card overflow-hidden">
         <CardContent className="p-0 flex flex-col sm:flex-row h-full">
@@ -75,7 +106,7 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4'
     );
   }
 
-  if (isError) {
+  if (!skip && isError) {
     return (
       <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive">
         <AlertCircle className="h-4 w-4" />
@@ -97,12 +128,10 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4'
             {formatDuration(videoInfo.duration)}
           </div>
         </div>
-        
+
         <div className="p-4 flex flex-col justify-between flex-1 min-w-0">
           <div>
-            <h3 className="font-medium text-foreground truncate" title={videoInfo.title}>
-              {videoInfo.title}
-            </h3>
+            <h3 className="font-medium text-foreground truncate" title={videoInfo.title}>{videoInfo.title}</h3>
             <div className="flex gap-3 mt-1 text-xs text-muted-foreground font-mono">
               {videoInfo.filesize && <span>{formatBytes(videoInfo.filesize)}</span>}
               {videoInfo.bitrate && <span>{Math.round(videoInfo.bitrate)} kbps</span>}
@@ -112,8 +141,8 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4'
 
           <div className="mt-4">
             {!jobId ? (
-              <Button 
-                onClick={handleDownload} 
+              <Button
+                onClick={handleDownload}
                 disabled={createDownload.isPending}
                 className="w-full sm:w-auto text-primary-foreground font-medium"
               >
@@ -128,7 +157,7 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4'
                   </Alert>
                 ) : progress.status === 'done' ? (
                   <Button asChild className="w-full sm:w-auto bg-green-500 hover:bg-green-600 text-black">
-                    <a href={`/api/downloads/${jobId}/file`} download>
+                    <a href={`${BASE}/api/downloads/${jobId}/file`} download>
                       <Download className="mr-2 h-4 w-4" /> Save File
                     </a>
                   </Button>
@@ -155,20 +184,51 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4'
 }
 
 export default function Home() {
-  const [urls, setUrls] = useState<{ url: string; format: 'mp3' | 'm4a' | 'mp4' }[]>([]);
+  const [items, setItems] = useState<{ url: string; format: 'mp3' | 'm4a' | 'mp4'; prefetchedInfo?: PlaylistEntry }[]>([]);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
+  const [playlistMeta, setPlaylistMeta] = useState<{ count: number; name?: string } | null>(null);
+  const [autoDownloadAll, setAutoDownloadAll] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      url: '',
-      format: 'mp3',
-    },
+    defaultValues: { url: '', format: 'mp3' },
   });
 
-  const onSubmit = (data: FormValues) => {
-    const inputUrls = data.url.split(',').map((u) => u.trim()).filter(Boolean);
-    const newItems = inputUrls.map(u => ({ url: u, format: data.format }));
-    setUrls(newItems);
+  const onSubmit = async (data: FormValues) => {
+    setPlaylistError(null);
+    setPlaylistMeta(null);
+    setAutoDownloadAll(false);
+
+    const rawUrl = data.url.trim();
+
+    if (isPlaylistUrl(rawUrl)) {
+      setPlaylistLoading(true);
+      setItems([]);
+      try {
+        const resp = await fetch(`${BASE}/api/playlist-info?url=${encodeURIComponent(rawUrl)}`);
+        const json = await resp.json();
+        if (!resp.ok) {
+          setPlaylistError(json.error || 'Failed to fetch playlist');
+          return;
+        }
+        const entries: PlaylistEntry[] = json.entries || [];
+        setItems(entries.map((e) => ({ url: e.url, format: data.format, prefetchedInfo: e })));
+        setPlaylistMeta({ count: json.count });
+      } catch (e) {
+        setPlaylistError('Network error fetching playlist');
+      } finally {
+        setPlaylistLoading(false);
+      }
+      return;
+    }
+
+    const inputUrls = rawUrl.split(',').map((u) => u.trim()).filter(Boolean);
+    setItems(inputUrls.map((url) => ({ url, format: data.format })));
+  };
+
+  const handleDownloadAll = () => {
+    setAutoDownloadAll(true);
   };
 
   return (
@@ -192,10 +252,10 @@ export default function Home() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input 
-                        placeholder="Paste YouTube URL(s) here..." 
+                      <Input
+                        placeholder="Paste YouTube video or playlist URL(s)..."
                         className="h-14 text-lg bg-muted/50 border-border font-mono placeholder:text-muted-foreground/50 focus-visible:ring-primary"
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage className="text-destructive font-mono text-sm" />
@@ -210,9 +270,9 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem className="w-full sm:w-auto">
                       <FormControl>
-                        <ToggleGroup 
-                          type="single" 
-                          value={field.value} 
+                        <ToggleGroup
+                          type="single"
+                          value={field.value}
                           onValueChange={(val) => val && field.onChange(val)}
                           className="justify-start border border-border/50 rounded-md p-1 bg-muted/30"
                         >
@@ -231,7 +291,8 @@ export default function Home() {
                   )}
                 />
 
-                <Button type="submit" size="lg" className="w-full sm:w-auto font-bold uppercase tracking-wider text-primary-foreground px-8">
+                <Button type="submit" size="lg" disabled={playlistLoading} className="w-full sm:w-auto font-bold uppercase tracking-wider text-primary-foreground px-8">
+                  {playlistLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Fetch Info
                 </Button>
               </div>
@@ -239,18 +300,51 @@ export default function Home() {
           </Form>
         </div>
 
+        {playlistError && (
+          <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{playlistError}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex-1 flex flex-col gap-4">
-          {urls.length === 0 ? (
+          {items.length === 0 && !playlistLoading ? (
             <div className="flex-1 flex items-center justify-center flex-col text-muted-foreground/50 py-12 border-2 border-dashed border-border/20 rounded-lg">
               <Music className="w-12 h-12 mb-4 opacity-20" />
-              <p className="font-mono text-sm">Paste any YouTube URL to get started</p>
+              <p className="font-mono text-sm">Paste any YouTube URL or playlist to get started</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {urls.map((item, i) => (
-                <VideoItem key={`${item.url}-${i}`} url={item.url} format={item.format} />
-              ))}
-            </div>
+            <>
+              {playlistMeta && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <List className="h-4 w-4" />
+                    <span className="font-mono">Playlist</span>
+                    <Badge variant="secondary" className="font-mono text-xs">{playlistMeta.count} videos</Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleDownloadAll}
+                    disabled={autoDownloadAll}
+                    className="gap-2 font-medium text-primary-foreground"
+                  >
+                    <Download className="h-4 w-4" />
+                    {autoDownloadAll ? 'Downloading all…' : 'Download All'}
+                  </Button>
+                </div>
+              )}
+              <div className="space-y-4">
+                {items.map((item, i) => (
+                  <VideoItem
+                    key={`${item.url}-${i}`}
+                    url={item.url}
+                    format={item.format}
+                    prefetchedInfo={item.prefetchedInfo}
+                    autoDownload={autoDownloadAll}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>

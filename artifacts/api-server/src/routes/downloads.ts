@@ -86,6 +86,76 @@ function parseProgress(line: string): { pct?: number; speed?: string; eta?: stri
   };
 }
 
+router.get("/playlist-info", async (req, res) => {
+  const url = req.query["url"] as string;
+  if (!url) {
+    res.status(400).json({ error: "url query param required" });
+    return;
+  }
+  if (!/youtu(\.be|be\.com)/i.test(url)) {
+    res.status(400).json({ error: "Invalid YouTube URL" });
+    return;
+  }
+
+  const args = [
+    "--flat-playlist",
+    "--dump-json",
+    "--no-warnings",
+    "--socket-timeout",
+    "30",
+    url,
+  ];
+
+  const entries: object[] = [];
+  let stderrBuf = "";
+  let stdoutBuf = "";
+  const proc = spawn(YTDLP, args);
+
+  proc.stdout.on("data", (chunk: Buffer) => {
+    stdoutBuf += chunk.toString();
+    const lines = stdoutBuf.split("\n");
+    stdoutBuf = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        const videoUrl = entry.url?.startsWith("http")
+          ? entry.url
+          : `https://www.youtube.com/watch?v=${entry.id}`;
+        entries.push({
+          url: videoUrl,
+          title: entry.title || "Unknown",
+          duration: entry.duration || 0,
+          thumbnail:
+            entry.thumbnail ||
+            (entry.thumbnails && entry.thumbnails[0]?.url) ||
+            `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`,
+        });
+      } catch {
+      }
+    }
+  });
+
+  proc.stderr.on("data", (chunk: Buffer) => {
+    stderrBuf += chunk.toString();
+  });
+
+  proc.on("close", (code) => {
+    if (entries.length === 0) {
+      const errMsg =
+        stderrBuf.split("\n").filter(Boolean).slice(-2).join(" ") ||
+        "No entries found in playlist";
+      res.status(400).json({ error: errMsg });
+      return;
+    }
+    res.json({ entries, count: entries.length });
+  });
+
+  proc.on("error", (e) => {
+    res.status(500).json({ error: `yt-dlp not found: ${e.message}` });
+  });
+});
+
 router.get("/video-info", async (req, res) => {
   const url = req.query["url"] as string;
   if (!url) {
