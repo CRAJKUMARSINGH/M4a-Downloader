@@ -155,8 +155,8 @@ router.post("/downloads", async (req, res) => {
     res.status(400).json({ error: "url and format are required" });
     return;
   }
-  if (!["mp3", "m4a"].includes(format)) {
-    res.status(400).json({ error: "format must be mp3 or m4a" });
+  if (!["mp3", "m4a", "mp4"].includes(format)) {
+    res.status(400).json({ error: "format must be mp3, m4a, or mp4" });
     return;
   }
 
@@ -186,24 +186,44 @@ function runDownload(job: JobRecord, outTemplate: string, format: string) {
   job.status = "downloading";
   broadcast(job);
 
-  const args = [
-    "--no-playlist",
-    "--no-warnings",
-    "--newline",
-    "--progress",
-    "--socket-timeout",
-    "30",
-    "-x",
-    "--audio-format",
-    format,
-    "--audio-quality",
-    "0",
-    "--ffmpeg-location",
-    FFMPEG,
-    "-o",
-    outTemplate,
-    job.url,
-  ];
+  const isVideo = format === "mp4";
+
+  const args = isVideo
+    ? [
+        "--no-playlist",
+        "--no-warnings",
+        "--newline",
+        "--progress",
+        "--socket-timeout",
+        "30",
+        "-f",
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+        "--merge-output-format",
+        "mp4",
+        "--ffmpeg-location",
+        FFMPEG,
+        "-o",
+        outTemplate,
+        job.url,
+      ]
+    : [
+        "--no-playlist",
+        "--no-warnings",
+        "--newline",
+        "--progress",
+        "--socket-timeout",
+        "30",
+        "-x",
+        "--audio-format",
+        format,
+        "--audio-quality",
+        "0",
+        "--ffmpeg-location",
+        FFMPEG,
+        "-o",
+        outTemplate,
+        job.url,
+      ];
 
   const proc = spawn(YTDLP, args);
   let stderrBuf = "";
@@ -326,8 +346,8 @@ router.get("/downloads/:jobId/file", (req, res) => {
     return;
   }
 
-  const mime = job.format === "mp3" ? "audio/mpeg" : "audio/mp4";
-  const safeFilename = encodeURIComponent(job.filename || `audio.${job.format}`);
+  const mime = job.format === "mp3" ? "audio/mpeg" : job.format === "mp4" ? "video/mp4" : "audio/mp4";
+  const safeFilename = encodeURIComponent(job.filename || `download.${job.format}`);
   res.setHeader("Content-Type", mime);
   res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${safeFilename}`);
 

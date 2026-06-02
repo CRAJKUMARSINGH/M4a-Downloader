@@ -11,12 +11,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Download, Music, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, Music, Video, AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const formSchema = z.object({
   url: z.string().min(1, 'URL is required'),
-  format: z.enum(['mp3', 'm4a']).default('mp3'),
+  format: z.enum(['mp3', 'm4a', 'mp4']).default('mp3'),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -37,7 +37,7 @@ function formatBytes(bytes: number | null | undefined) {
   return `${mb.toFixed(1)} MB`;
 }
 
-function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' }) {
+function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' | 'mp4' }) {
   const { data: videoInfo, isLoading, isError, error } = useGetVideoInfo(
     { url },
     { query: { enabled: !!url, queryKey: getGetVideoInfoQueryKey({ url }), retry: false } }
@@ -155,7 +155,7 @@ function VideoItem({ url, format }: { url: string; format: 'mp3' | 'm4a' }) {
 }
 
 export default function Home() {
-  const [urls, setUrls] = useState<{ url: string; format: 'mp3' | 'm4a' }[]>([]);
+  const [urls, setUrls] = useState<{ url: string; format: 'mp3' | 'm4a' | 'mp4' }[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -216,8 +216,15 @@ export default function Home() {
                           onValueChange={(val) => val && field.onChange(val)}
                           className="justify-start border border-border/50 rounded-md p-1 bg-muted/30"
                         >
-                          <ToggleGroupItem value="mp3" className="px-6 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">MP3</ToggleGroupItem>
-                          <ToggleGroupItem value="m4a" className="px-6 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">M4A</ToggleGroupItem>
+                          <ToggleGroupItem value="mp3" className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                            <Music className="mr-1.5 h-3.5 w-3.5" />MP3
+                          </ToggleGroupItem>
+                          <ToggleGroupItem value="m4a" className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                            <Music className="mr-1.5 h-3.5 w-3.5" />M4A
+                          </ToggleGroupItem>
+                          <ToggleGroupItem value="mp4" className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                            <Video className="mr-1.5 h-3.5 w-3.5" />MP4
+                          </ToggleGroupItem>
                         </ToggleGroup>
                       </FormControl>
                     </FormItem>
