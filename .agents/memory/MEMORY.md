@@ -1,0 +1,1 @@
+- [Vite port detection](vite-port-detection.md) — Replit workflow scanner can't detect Vite ports; serve built frontend from Express instead (port 8080 always works).

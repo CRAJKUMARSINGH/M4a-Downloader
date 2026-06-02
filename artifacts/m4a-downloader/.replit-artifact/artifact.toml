@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "YouTube Audio Downloader"
+version = "1.0.0"
+id = "artifacts/m4a-downloader"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 8080
+
+[services.development]
+run = "pnpm --filter @workspace/api-server run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/m4a-downloader", "run", "build" ]
+publicDir = "artifacts/m4a-downloader/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "8080"
+BASE_PATH = "/"

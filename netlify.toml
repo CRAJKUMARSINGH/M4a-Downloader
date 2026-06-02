@@ -1,0 +1,55 @@
+[build]
+  base    = "artifacts/m4a-downloader"
+  publish = "dist/public"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback — all unmatched routes serve index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ─── Netlify Functions ────────────────────────────────────────────────────────
+# video-info  →  netlify/functions/video-info  (fast, < 10 s)
+# downloads   →  netlify/functions/create-download (background fn, up to 15 min)
+# events / file endpoints require a persistent server — deploy the Express API
+# (artifacts/api-server) on Render / Railway and set BACKEND_URL below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[redirects]]
+  from   = "/api/video-info"
+  to     = "/.netlify/functions/video-info"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/downloads/:jobId/events"
+  to     = ":BACKEND_URL/api/downloads/:jobId/events"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/downloads/:jobId/file"
+  to     = ":BACKEND_URL/api/downloads/:jobId/file"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/downloads"
+  to     = ":BACKEND_URL/api/downloads"
+  status = 200
+  force  = true
+
+[functions]
+  directory        = "netlify/functions"
+  node_bundler     = "esbuild"
+  included_files   = ["netlify/functions/**"]
+
+[functions."video-info"]
+  timeout = 26
+
+[functions."create-download"]
+  timeout = 900

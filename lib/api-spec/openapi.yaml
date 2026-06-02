@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: YouTube Audio Downloader API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: downloads
+    description: Audio download operations
 paths:
   /healthz:
     get:
@@ -24,6 +25,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /video-info:
+    get:
+      operationId: getVideoInfo
+      tags: [downloads]
+      summary: Fetch video metadata
+      description: Returns title, duration, thumbnail, filesize, and bitrate for a YouTube URL
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+          description: YouTube video URL
+      responses:
+        "200":
+          description: Video metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoInfo"
+        "400":
+          description: Invalid URL or fetch error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /downloads:
+    post:
+      operationId: createDownload
+      tags: [downloads]
+      summary: Start a download job
+      description: Queues an audio download and returns a jobId for tracking progress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DownloadInput"
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJob"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +89,47 @@ components:
       required:
         - status
 
+    VideoInfo:
+      type: object
+      required: [title, duration, thumbnail, videoId]
+      properties:
+        title:
+          type: string
+        duration:
+          type: integer
+          description: Duration in seconds
+        thumbnail:
+          type: string
+          description: Thumbnail URL
+        filesize:
+          type: ["integer", "null"]
+          description: Approximate filesize in bytes
+        bitrate:
+          type: ["number", "null"]
+          description: Audio bitrate in kbps
+        videoId:
+          type: string
+
+    DownloadInput:
+      type: object
+      required: [url, format]
+      properties:
+        url:
+          type: string
+        format:
+          type: string
+          enum: [mp3, m4a]
+
+    DownloadJob:
+      type: object
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
