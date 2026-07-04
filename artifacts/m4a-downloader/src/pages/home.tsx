@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -14,6 +15,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Badge } from '@/components/ui/badge';
 import { Download, Music, Video, AlertCircle, Loader2, List } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import UpgradeBanner, { ProBadge } from '@/components/UpgradeBanner';
+import { getFeatureGates } from '@/lib/subscriptionService';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -184,6 +187,8 @@ function VideoItem({
 }
 
 export default function Home() {
+  const [, navigate] = useLocation();
+  const gates = getFeatureGates();
   const [items, setItems] = useState<{ url: string; format: 'mp3' | 'm4a' | 'mp4'; prefetchedInfo?: PlaylistEntry }[]>([]);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistError, setPlaylistError] = useState<string | null>(null);
@@ -239,8 +244,24 @@ export default function Home() {
             <Music className="w-5 h-5" />
           </div>
           <h1 className="font-bold tracking-tight text-lg">Audio Downloader</h1>
+          <div className="ml-auto flex items-center gap-3">
+            {gates.hideBanner && (
+              <Badge variant="outline" className="border-primary/40 text-primary text-[10px] font-bold uppercase tracking-wider px-2">
+                Pro
+              </Badge>
+            )}
+            <button
+              onClick={() => navigate('/pricing')}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium"
+            >
+              Pricing
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* Upgrade banner — hidden for Pro users */}
+      <UpgradeBanner />
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 flex flex-col gap-8">
         <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm">
@@ -282,8 +303,13 @@ export default function Home() {
                           <ToggleGroupItem value="m4a" className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                             <Music className="mr-1.5 h-3.5 w-3.5" />M4A
                           </ToggleGroupItem>
-                          <ToggleGroupItem value="mp4" className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                          <ToggleGroupItem
+                            value="mp4"
+                            disabled={!gates.mp4Format}
+                            className="px-5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground disabled:opacity-60"
+                          >
                             <Video className="mr-1.5 h-3.5 w-3.5" />MP4
+                            {!gates.mp4Format && <ProBadge />}
                           </ToggleGroupItem>
                         </ToggleGroup>
                       </FormControl>
@@ -322,15 +348,27 @@ export default function Home() {
                     <span className="font-mono">Playlist</span>
                     <Badge variant="secondary" className="font-mono text-xs">{playlistMeta.count} videos</Badge>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadAll}
-                    disabled={autoDownloadAll}
-                    className="gap-2 font-medium text-primary-foreground"
-                  >
-                    <Download className="h-4 w-4" />
-                    {autoDownloadAll ? 'Downloading all…' : 'Download All'}
-                  </Button>
+                  {gates.playlistDownload ? (
+                    <Button
+                      size="sm"
+                      onClick={handleDownloadAll}
+                      disabled={autoDownloadAll}
+                      className="gap-2 font-medium text-primary-foreground"
+                    >
+                      <Download className="h-4 w-4" />
+                      {autoDownloadAll ? 'Downloading all…' : 'Download All'}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate('/pricing')}
+                      className="gap-2 font-medium border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      <ProBadge />
+                      Unlock Download All
+                    </Button>
+                  )}
                 </div>
               )}
               <div className="space-y-4">
