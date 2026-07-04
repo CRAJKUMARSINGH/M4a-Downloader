@@ -8,9 +8,24 @@ import type { Response } from "express";
 
 const router = Router();
 
-const YTDLP = "/home/runner/workspace/.pythonlibs/bin/yt-dlp";
-const FFMPEG = "ffmpeg";
+// Use system yt-dlp (works on both Linux/Replit and Windows)
+const YTDLP = process.env.YTDLP_PATH ?? "yt-dlp";
+const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
 const JOBS_TTL_MS = 30 * 60 * 1000; // 30 min
+
+/**
+ * Resolve the user's Downloads folder.
+ * - Windows : %USERPROFILE%\Downloads
+ * - macOS/Linux : ~/Downloads  (fallback to os.homedir()/Downloads)
+ */
+function getDownloadsDir(): string {
+  const home = process.env["USERPROFILE"] ?? process.env["HOME"] ?? os.homedir();
+  const dir = path.join(home, "Downloads");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
 
 type JobStatus = "pending" | "fetching" | "downloading" | "converting" | "done" | "error";
 
@@ -62,12 +77,7 @@ function cleanupOldJobs() {
   const now = Date.now();
   for (const [id, job] of jobs) {
     if (now - job.createdAt > JOBS_TTL_MS) {
-      if (job.filePath) {
-        try {
-          fs.unlinkSync(job.filePath);
-        } catch {
-        }
-      }
+      // Files saved to the user's Downloads folder — do not delete them
       jobs.delete(id);
     }
   }
@@ -231,8 +241,8 @@ router.post("/downloads", async (req, res) => {
   }
 
   const jobId = uuidv4();
-  const tmpDir = os.tmpdir();
-  const outTemplate = path.join(tmpDir, `ydl_${jobId}_%(title)s.%(ext)s`);
+  const downloadsDir = getDownloadsDir();
+  const outTemplate = path.join(downloadsDir, `ydl_${jobId}_%(title)s.%(ext)s`);
 
   const job: JobRecord = {
     id: jobId,
@@ -334,10 +344,10 @@ function runDownload(job: JobRecord, outTemplate: string, format: string) {
       return;
     }
 
-    const tmpDir = path.dirname(outTemplate);
+    const outDir = path.dirname(outTemplate);
     const prefix = `ydl_${job.id}_`;
     try {
-      const files = fs.readdirSync(tmpDir).filter((f) => f.startsWith(prefix) && f.endsWith(`.${format}`));
+      const files = fs.readdirSync(outDir).filter((f) => f.startsWith(prefix) && f.endsWith(`.${format}`));
       if (files.length === 0) {
         job.status = "error";
         job.error = "Output file not found after download";
@@ -345,7 +355,7 @@ function runDownload(job: JobRecord, outTemplate: string, format: string) {
         closeClients(job);
         return;
       }
-      job.filePath = path.join(tmpDir, files[0]);
+      job.filePath = path.join(outDir, files[0]);
       job.filename = files[0].replace(prefix, "");
       job.status = "done";
       job.progress = 100;
@@ -416,6 +426,18 @@ router.get("/downloads/:jobId/file", (req, res) => {
     return;
   }
 
+  // Rename to clean filename (strip the ydl_<jobId>_ prefix) if not already done
+  const dir = path.dirname(job.filePath);
+  const cleanPath = path.join(dir, job.filename!);
+  if (job.filePath !== cleanPath && !fs.existsSync(cleanPath)) {
+    try {
+      fs.renameSync(job.filePath, cleanPath);
+      job.filePath = cleanPath;
+    } catch {
+      // keep original path if rename fails
+    }
+  }
+
   const mime = job.format === "mp3" ? "audio/mpeg" : job.format === "mp4" ? "video/mp4" : "audio/mp4";
   const safeFilename = encodeURIComponent(job.filename || `download.${job.format}`);
   res.setHeader("Content-Type", mime);
@@ -424,11 +446,8 @@ router.get("/downloads/:jobId/file", (req, res) => {
   const stream = fs.createReadStream(job.filePath);
   stream.pipe(res);
 
+  // File stays in Downloads folder — do NOT delete it after serving
   stream.on("close", () => {
-    try {
-      if (job.filePath) fs.unlinkSync(job.filePath);
-    } catch {
-    }
     jobs.delete(job.id);
   });
 });
