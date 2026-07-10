@@ -5,7 +5,7 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
 const YTDLP_CANDIDATES = [
-  "/home/runner/workspace/.pythonlibs/bin/yt-dlp",
+  "/opt/buildhome/python3.11/bin/yt-dlp",
   "/usr/local/bin/yt-dlp",
   "/usr/bin/yt-dlp",
   "yt-dlp",

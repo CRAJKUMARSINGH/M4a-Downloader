@@ -1,10 +1,12 @@
 [build]
   base    = "artifacts/m4a-downloader"
   publish = "dist/public"
-  command = "npm run build"
+  # Install yt-dlp before building
+  command = "pip install yt-dlp && npm run build"
 
 [build.environment]
   NODE_VERSION = "20"
+  PYTHON_VERSION = "3.11"
 
 # ─── Netlify Functions ────────────────────────────────────────────────────────
 # video-info  →  netlify/functions/video-info  (fast, < 10 s)
@@ -21,7 +23,7 @@
 
 [[redirects]]
   from   = "/api/playlist-info"
-  to     = "/.netlify/functions/playlist-info"
+  to     = ":BACKEND_URL/api/playlist-info"
   status = 200
   force  = true
 
