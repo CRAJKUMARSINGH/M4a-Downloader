@@ -6,12 +6,6 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA fallback — all unmatched routes serve index.html
-[[redirects]]
-  from   = "/*"
-  to     = "/index.html"
-  status = 200
-
 # ─── Netlify Functions ────────────────────────────────────────────────────────
 # video-info  →  netlify/functions/video-info  (fast, < 10 s)
 # downloads   →  netlify/functions/create-download (background fn, up to 15 min)
@@ -62,3 +56,9 @@
 
 [functions."create-download"]
   timeout = 900
+
+# SPA fallback — all unmatched routes serve index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
