@@ -1,27 +1,4 @@
 import type { Context } from "@netlify/functions";
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
-
-const YTDLP_CANDIDATES = [
-  "/opt/buildhome/python3.11/bin/yt-dlp",
-  "/usr/local/bin/yt-dlp",
-  "/usr/bin/yt-dlp",
-  "yt-dlp",
-];
-
-async function findYtdlp(): Promise<string> {
-  for (const candidate of YTDLP_CANDIDATES) {
-    try {
-      await execFileAsync(candidate, ["--version"]);
-      return candidate;
-    } catch {
-      continue;
-    }
-  }
-  throw new Error("yt-dlp not found. Install it: pip install yt-dlp");
-}
 
 export default async function handler(req: Request, _ctx: Context) {
   if (req.method !== "GET") {
@@ -47,48 +24,46 @@ export default async function handler(req: Request, _ctx: Context) {
   }
 
   try {
-    const ytdlp = await findYtdlp();
-    const args = [
-      "--flat-playlist",
-      "--dump-json",
-      "--no-warnings",
-      "--socket-timeout",
-      "30",
-      url,
-    ];
-
-    const { stdout, stderr } = await execFileAsync(ytdlp, args);
-
-    const lines = stdout.split("\n").filter(Boolean);
-    const entries: object[] = [];
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        const videoUrl = entry.url?.startsWith("http")
-          ? entry.url
-          : `https://www.youtube.com/watch?v=${entry.id}`;
-        entries.push({
-          url: videoUrl,
-          title: entry.title || "Unknown",
-          duration: entry.duration || 0,
-          thumbnail:
-            entry.thumbnail ||
-            (entry.thumbnails && entry.thumbnails[0]?.url) ||
-            `https://i.ytimg.com/vi/${entry.id}/mqdefault.jpg`,
-        });
-      } catch {
-        // Skip invalid JSON lines
-      }
-    }
-
-    if (entries.length === 0) {
-      const errMsg = stderr.split("\n").filter(Boolean).slice(-2).join(" ") || "No entries found in playlist";
-      return new Response(JSON.stringify({ error: errMsg }), {
+    // Extract playlist ID from URL
+    const playlistMatch = url.match(/[?&]list=([^&]+)/);
+    if (!playlistMatch) {
+      return new Response(JSON.stringify({ error: "No playlist ID found in URL" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    const playlistId = playlistMatch[1];
+    
+    // Use Invidious API (public instance)
+    const apiUrl = `https://vid.puffyan.us/api/v1/playlists/${playlistId}`;
+    const response = await fetch(apiUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Invidious API returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.videos || data.videos.length === 0) {
+      return new Response(JSON.stringify({ error: "No videos found in playlist" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const entries = data.videos.map((video: any) => ({
+      url: `https://www.youtube.com/watch?v=${video.videoId}`,
+      title: video.title || "Unknown",
+      duration: video.lengthSeconds || 0,
+      thumbnail: video.videoThumbnails?.find((t: any) => t.quality === "medium")?.url ||
+                 video.videoThumbnails?.[0]?.url ||
+                 `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`,
+    }));
 
     return new Response(JSON.stringify({ entries, count: entries.length }), {
       status: 200,
