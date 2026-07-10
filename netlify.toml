@@ -26,6 +26,12 @@
   force  = true
 
 [[redirects]]
+  from   = "/api/playlist-info"
+  to     = "/.netlify/functions/playlist-info"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/api/downloads/:jobId/events"
   to     = ":BACKEND_URL/api/downloads/:jobId/events"
   status = 200
@@ -50,6 +56,9 @@
 
 [functions."video-info"]
   timeout = 26
+
+[functions."playlist-info"]
+  timeout = 60
 
 [functions."create-download"]
   timeout = 900
